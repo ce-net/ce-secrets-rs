@@ -1,5 +1,16 @@
 # ce-secrets-rs
 
+> **Status (2026-06-26): the vault has moved to `ce-iam-core::secrets`.** ce-secrets-rs is now the
+> **byte-exact crypto primitive layer** beneath that vault, not a vault on its own. The full Rust
+> vault — `init`/`recover`/pairing/`put`/`get`/`grant`/auth over a pluggable async store — is
+> `ce-iam-core::secrets::Vault` (repo `ce-iam`, crate `crates/ce-iam-core`), which *depends on this
+> crate* for the crypto. **New code should use `ce-iam-core`.** Depend on `ce-secrets-rs` directly
+> only for the raw primitives (`derive_owner_master`, `wrap_master`/`unwrap_master`,
+> `seal_secret`/`decrypt_secret`, `sign_record`/`verify_record`, `sign_challenge`/`verify_auth`). The
+> crate is not going away: it is the audited interop core (the five traps) and is golden-vectored from
+> `ce-iam-core/tests/golden_secrets.rs`. The JS reference (`ce-secrets/src/crypto.mjs`) stays the
+> oracle.
+
 Rust SDK for [ce-secrets](https://github.com/ce-net/ce-secrets) — a light, **byte-exact interop**
 client for the canonical JavaScript vault. It implements the read + auth surface a Rust consumer
 (notably **ce-watch**) needs: device keys, ECIES master-unwrap, AES-256-GCM secret-decrypt, and the
