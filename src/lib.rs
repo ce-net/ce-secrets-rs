@@ -37,7 +37,13 @@ pub mod device;
 pub use device::{device_id, DeviceKey, DevicePublic, Jwk};
 
 pub mod crypto;
-pub use crypto::{decrypt_secret, unwrap_master, SealedSecret, WrapBlob, MASTER_WRAP_INFO};
+pub use crypto::{
+    decrypt_secret, derive_owner_master, fingerprint, seal_secret, unwrap_master, wrap_master,
+    MASTER_WRAP_INFO, OWNER_MASTER_INFO, SealedSecret, WrapBlob,
+};
+
+pub mod records;
+pub use records::{sign_record, stable_stringify_record, verify_record};
 
 pub mod auth;
 pub use auth::{
@@ -48,4 +54,14 @@ pub use auth::{
 /// Re-exported encoding helpers (base64url-no-pad, hex) for callers that need to match the wire.
 pub mod encoding {
     pub use crate::enc::{b64url_decode, b64url_encode, hex_decode, hex_encode};
+}
+
+/// Re-export the OS RNG so downstream crates (e.g. the ce-iam vault, which generates grant ids and
+/// pairing codes) get randomness without taking their own `rand_core` dependency.
+pub use rand_core;
+
+/// Fill `buf` with cryptographically secure random bytes from the OS RNG.
+pub fn fill_random(buf: &mut [u8]) {
+    use rand_core::{OsRng, RngCore};
+    OsRng.fill_bytes(buf);
 }

@@ -7,7 +7,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use p256::ecdsa::{SigningKey as EcdsaSigningKey, VerifyingKey as EcdsaVerifyingKey};
-use p256::elliptic_curve::sec1::FromEncodedPoint;
+use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use p256::{
     EncodedPoint, FieldBytes, PublicKey, SecretKey,
 };
@@ -81,6 +81,43 @@ impl Jwk {
     pub fn ecdsa_signing(&self) -> Result<EcdsaSigningKey> {
         Ok(EcdsaSigningKey::from(self.secret_key()?))
     }
+
+    /// The raw 32-byte private scalar `d`, decoded — used as the HKDF IKM for `deriveOwnerMaster`.
+    pub fn scalar_bytes(&self) -> Result<[u8; 32]> {
+        let d = self
+            .d
+            .as_ref()
+            .ok_or_else(|| anyhow!("JWK has no private scalar `d`"))?;
+        let fb = self.coord("d", d)?;
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&fb);
+        Ok(out)
+    }
+
+    /// Build the public-key JWK (`kty/crv/x/y`, no `d`) from a P-256 [`PublicKey`], matching exactly
+    /// what WebCrypto `exportKey('jwk', publicKey)` emits for an EC P-256 key.
+    pub fn from_public_key(pk: &PublicKey) -> Self {
+        let pt = pk.to_encoded_point(false);
+        let x = pt.x().expect("uncompressed point has x");
+        let y = pt.y().expect("uncompressed point has y");
+        Jwk {
+            kty: "EC".to_string(),
+            crv: "P-256".to_string(),
+            x: enc::b64url_encode(x.as_slice()),
+            y: enc::b64url_encode(y.as_slice()),
+            d: None,
+            ext: Some(true),
+            key_ops: Vec::new(),
+        }
+    }
+
+    /// Build the full private-key JWK (`kty/crv/x/y/d`) from a P-256 [`SecretKey`].
+    pub fn from_secret_key(sk: &SecretKey) -> Self {
+        let mut j = Self::from_public_key(&sk.public_key());
+        let d = sk.to_bytes();
+        j.d = Some(enc::b64url_encode(d.as_slice()));
+        j
+    }
 }
 
 /// A full device key: the four JWKs ce-secrets stores, plus the derived 16-hex device id.
@@ -110,6 +147,27 @@ pub struct DevicePublic {
 }
 
 impl DeviceKey {
+    /// Generate a fresh device key — two random P-256 keypairs (ECDH for wrap/unwrap, ECDSA for
+    /// sign/verify), serialized as JWKs, with the derived stable [`device_id`]. The Rust analogue of
+    /// `generateDeviceKey()` in `crypto.mjs`; the resulting key is byte-compatible with the JS vault.
+    pub fn generate() -> Result<Self> {
+        use rand_core::OsRng;
+        let ecdh = SecretKey::random(&mut OsRng);
+        let ecdsa = SecretKey::random(&mut OsRng);
+        let ecdh_priv = Jwk::from_secret_key(&ecdh);
+        let ecdh_pub = Jwk::from_public_key(&ecdh.public_key());
+        let ecdsa_priv = Jwk::from_secret_key(&ecdsa);
+        let ecdsa_pub = Jwk::from_public_key(&ecdsa.public_key());
+        let id = device_id(&ecdh_pub, &ecdsa_pub)?;
+        Ok(DeviceKey {
+            ecdh_priv,
+            ecdh_pub,
+            ecdsa_priv,
+            ecdsa_pub,
+            id,
+        })
+    }
+
     /// Parse a device key from its JSON form (the JS `generateDeviceKey()` output).
     pub fn from_json(s: &str) -> Result<Self> {
         serde_json::from_str(s).context("parse DeviceKey JSON")
