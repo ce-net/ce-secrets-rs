@@ -68,4 +68,5 @@ secret, and verifies the auth signature produced by the JavaScript implementatio
 
 ## License
 
-MIT
+AGPL-3.0-only. A commercial license is also available — see [`LICENSING.md`](./LICENSING.md)
+and [`COMMERCIAL-LICENSE.md`](./COMMERCIAL-LICENSE.md).
